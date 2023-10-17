@@ -1,0 +1,186 @@
+extensions [ nw ]
+globals [color-mode pop %Adopted %Network %Broadcast] ;; 0 = default, 1 = source, 2 = times heard, 3 = popularity
+
+turtles-own [ adopted? seed? net-adopted?]
+;; adopted?: indicates if the product has been adopted
+;; seed?: Initial adoption flag
+;; net-adopted?: indicates if the adoption has been reached by network effect
+
+
+
+;; Create people and links.
+
+
+
+to setup
+  ca
+  set color-mode 0 ;; default
+  ;;set-default-shape turtles "person"
+  create-turtles num-nodes [
+    set shape "circle"
+    setxy random-xcor random-ycor
+  ]
+  reset-ticks
+end
+
+to setup-nodes
+  ask turtles[
+    set adopted? false
+    set seed? false
+    set net-adopted? false
+
+   ;; setxy random-xcor random-ycor
+
+    set color  blue ;; white
+
+    ;;set size 0.5
+    let degree [count my-links] of turtles
+    let sumd sum degree
+    output-print count turtles
+    output-print sumd / (count turtles)
+    ;;let mean-degree [sum degree] / [count turtles]
+    ;;file-open "List_of_degrees.txt"
+    output-print  degree
+  ]
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;
+;;;Network Procedures;;;
+;;;;;;;;;;;;;;;;;;;;;;;;
+
+;; Network and layout procedures incorporated from Preferential Attachment example model
+
+to create-network
+  wire_graphml;; create random network with probability
+  reset-ticks
+  if layout? [layout]
+  ;;if count turtles = num-nodes [ ;; before it was population We want the network to have POPULATION turtles, as set by the slider
+  setup-nodes
+  ask n-of num-seed-adopters turtles [
+         set adopted? true
+         set color lime
+         set seed? true
+    ]
+
+    repeat 30 [layout-spring turtles links 0.2 5 1]
+    reset-ticks ;; reset the ticks at 0 so we can observe them for the product diffusion section
+    stop
+
+end
+to wire_graphml
+  clear-all
+  nw:load-graphml "Assortative_BM.graphml"
+  repeat 30 [ layout-spring turtles links 0.2 5 1 ]
+  let degree [count my-links] of turtles
+  let sumd sum degree
+  output-print count turtles
+  output-print sumd / (count turtles)
+  ;;let mean-degree [sum degree] / [count turtles]
+  ;;file-open "List_of_degrees.txt"
+  output-print  degree
+end
+
+
+;;;;;;;;;;;;;;;;;;;;;;;
+;;;Layout Procedures;;;
+;;;;;;;;;;;;;;;;;;;;;;;
+
+;; resize nodes, change back and forth from size based on degree to a size of 1
+
+to resize-nodes
+  ifelse all? turtles [size <= 1]
+  [
+    ;; a node is a circle with diameter determined by
+    ;; the SIZE variable; using SQRT makes the circle's
+    ;; area proportional to its degree
+    ask turtles [set size sqrt count link-neighbors ]
+  ]
+  [
+    ask turtles [set size 1]
+  ]
+end
+
+to layout
+  ;; the number 3 here is arbitrary; more repetitions slows down the
+  ;; model, but too few gives poor layouts
+  repeat 6 [
+    ;; the more turtles we have to fit into the same amount of space,
+    ;; the smaller the inputs to layout-spring we'll need to use
+    let factor sqrt count turtles
+    ;; numbers here are arbitrarily chosen for pleasing appearance
+    layout-spring turtles links (1 / factor) (7 / factor) (1 / factor)
+    display  ;; for smooth animation
+  ]
+  ;; don't bump the edges of the world
+  let x-offset max [xcor] of turtles + min [xcor] of turtles
+  let y-offset max [ycor] of turtles + min [ycor] of turtles
+  ;; big jumps look funny, so only adjust a little each time
+  set x-offset limit-magnitude x-offset 0.1
+  set y-offset limit-magnitude y-offset 0.1
+  ask turtles [ setxy (xcor - x-offset / 2) (ycor - y-offset / 2) ]
+end
+
+to-report limit-magnitude [number limit]
+  if number > limit [ report limit ]
+  if number < (- limit) [ report (- limit) ]
+  report number
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;    Method to run the model.
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to go
+
+  ;; ask the turles to adopt or not randomly.
+  if (not any? turtles with [not adopted?]) [
+    stop
+  ]
+  ask turtles with [not adopted?] [
+    adopt
+  ]
+  tick-advance 1.0
+
+end
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;
+;;;    Bass Model
+;;;    Method to cause an unadopted agent to adopt, based on their immediate neighborhood,
+;;;    social-influence, and broadcast-influence
+;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+
+to adopt
+  ifelse random-float 1.0 < broadcast-influence [
+    set adopted? true
+    set color red
+  ][
+  let neighbors-adopted link-neighbors with [adopted?]
+  let total-neighbors link-neighbors
+  let degree [count my-links] of turtles
+  let mean-degree sum degree / (count turtles)
+
+  if count total-neighbors > 0[
+  if not adopted? and random-float 1.0 <  (social-influence * (count neighbors-adopted / mean-degree)) [
+    set adopted? true
+    set net-adopted? true
+    set color yellow
+  ]
+  ]
+  ]
+  ;; color the link in yellow if both ends have been adopted by network influence
+  ask links [
+    if all? both-ends [adopted? = true]
+    [ ifelse all? both-ends [ net-adopted? = true]
+          [set color yellow]
+    [ set color red]
+    ]
+  ]
+  set %Adopted ((count turtles with [color = yellow] + count turtles with [color = red] + count turtles with [color = lime] )/ count turtles) * 100
+  set %Network (count turtles with [color = yellow] / count turtles) * 100
+  set %Broadcast (count turtles with [color = red]/ count turtles) * 100
+  plotxy (ticks) %Adopted  
+end
